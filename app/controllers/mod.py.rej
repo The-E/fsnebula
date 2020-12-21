@@ -1,0 +1,112 @@
+--- app/controllers/mod.py
++++ app/controllers/mod.py
+@@ -549,7 +472,108 @@
+     app.logger.info('Updating repo...')
+ 
+     try:
+-        repo = convert_mod_list(Mod.objects)
++        repo = []
++        for mod in Mod.objects:
++            logo = UploadedFile.objects(checksum=mod.logo).first()
++            tile = UploadedFile.objects(checksum=mod.tile).first()
++
++            for rel in mod.releases:
++                if rel.hidden:
++                    continue
++
++                if rel.banner and '://' in rel.banner:
++                    banner = rel.banner
++                else:
++                    banner = UploadedFile.objects(checksum=rel.banner).first()
++                    if banner:
++                        banner = banner.get_url()
++
++                rmeta = {
++                    'id': mod.mid,
++                    'title': mod.title,
++                    'version': rel.version,
++                    'stability': rel.stability if mod.type == 'engine' else None,
++                    'parent': mod.parent,
++                    'description': rel.description,
++                    'logo': logo and logo.get_url() or None,
++                    'tile': tile and tile.get_url() or None,
++                    'banner': banner,
++                    'screenshots': [],
++                    'attachments': [],
++                    'release_thread': rel.release_thread,
++                    'videos': rel.videos,
++                    'notes': rel.notes,
++                    'first_release': mod.first_release.strftime('%Y-%m-%d'),
++                    'last_update': rel.last_update.strftime('%Y-%m-%d'),
++                    'cmdline': rel.cmdline,
++                    'mod_flag': rel.mod_flag,
++                    'type': mod.type,
++                    'packages': []
++                }
++
++                for prop in ('screenshots', 'attachments'):
++                    for chk in getattr(rel, prop):
++                        if '://' in chk:
++                            rmeta[prop].append(chk)
++                        else:
++                            image = UploadedFile.objects(checksum=chk).first()
++                            if image:
++                                rmeta[prop].append(image.get_url())
++
++                for pkg in rel.packages:
++                    pmeta = {
++                        'name': pkg.name,
++                        'notes': pkg.notes,
++                        'status': pkg.status,
++                        'dependencies': [],
++                        'environment': pkg.environment,
++                        'folder': pkg.folder,
++                        'is_vp': pkg.is_vp,
++                        'executables': [],
++                        'files': [],
++                        'filelist': []
++                    }
++
++                    for dep in pkg.dependencies:
++                        pmeta['dependencies'].append({
++                            'id': dep.id,
++                            'version': dep.version,
++                            'packages': dep.packages
++                        })
++
++                    for exe in pkg.executables:
++                        pmeta['executables'].append({
++                            'file': exe.file,
++                            'label': exe.label
++                        })
++
++                    for archive in pkg.files:
++                        file = {
++                            'filename': archive.filename,
++                            'dest': archive.dest,
++                            'checksum': ('sha256', archive.checksum),
++                            'filesize': archive.filesize,
++                        }
++
++                        if not archive.urls:
++                            arfile = UploadedFile.objects(checksum=archive.checksum).first()
++                            file['urls'] = [arfile.get_url()]
++                        else:
++                            file['urls'] = archive.urls
++
++                        pmeta['files'].append(file)
++
++                    for file in pkg.filelist:
++                        pmeta['filelist'].append({
++                            'filename': file.filename,
++                            'archive': file.archive,
++                            'orig_name': file.orig_name,
++                            'checksum': file.checksum
++                        })
++
++                    rmeta['packages'].append(pmeta)
++
++                repo.append(rmeta)
+ 
+         with open(repo_path, 'w') as stream:
+             json.dump({'mods': repo}, stream)
